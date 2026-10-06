@@ -1,39 +1,294 @@
-"""Glue layer: combines DB stations + distance + ML prediction for the pages."""
+"""Station service using CSV data."""
+
 from datetime import datetime
-from utils import database as db
-from utils.distance import haversine, estimate_travel_minutes, navigation_url
+from pathlib import Path
+
+import pandas as pd
+
+from utils.distance import (
+    haversine,
+    estimate_travel_minutes,
+    navigation_url,
+)
+
 from ml.predict import predict, ModelMissingError
 
 
-def enrich_stations(user_lat, user_lon, now=None):
-    """Return a list of station dicts with distance, travel time and AI prediction.
+# Project folder
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-    Raises DatabaseError if MySQL is unreachable. If the ML model is missing, the
-    admin-entered values are used and 'ml_ok' is False.
-    """
+# Data folder
+DATA_DIR = BASE_DIR / "data"
+
+
+def load_station_data():
+    """Load station and history data from CSV files."""
+
+    stations_file = DATA_DIR / "cng_stations.csv"
+    history_file = DATA_DIR / "cng_history.csv"
+
+    if not stations_file.exists():
+        raise FileNotFoundError(
+            "cng_stations.csv not found. "
+            "Run: python generate_dataset.py"
+        )
+
+    stations = pd.read_csv(stations_file)
+
+    # Load historical data
+    if history_file.exists():
+
+        history = pd.read_csv(history_file)
+
+        # Get latest record for each station
+        if "date" in history.columns:
+            history = history.sort_values(
+                ["station_id", "date", "hour"]
+            )
+
+        history = history.drop_duplicates(
+            subset=["station_id"],
+            keep="last"
+        )
+
+        columns = [
+            "station_id",
+            "availability",
+            "queue_length",
+            "waiting_time",
+            "traffic_level",
+        ]
+
+        available_columns = [
+            column
+            for column in columns
+            if column in history.columns
+        ]
+
+        stations = stations.merge(
+            history[available_columns],
+            on="station_id",
+            how="left",
+        )
+
+    # Add missing status column
+    if "status" not in stations.columns:
+        stations["status"] = "open"
+
+    stations["status"] = (
+        stations["status"]
+        .fillna("open")
+        .astype(str)
+        .str.lower()
+    )
+
+    # Add missing phone column
+    if "phone" not in stations.columns:
+        stations["phone"] = "N/A"
+
+    # Add missing operating hours column
+    if "operating_hours" not in stations.columns:
+        stations["operating_hours"] = "06:00-22:00"
+
+    # Add missing updated_at column
+    if "updated_at" not in stations.columns:
+        stations["updated_at"] = None
+
+    # Handle empty values
+    stations["phone"] = (
+        stations["phone"]
+        .fillna("N/A")
+    )
+
+    stations["operating_hours"] = (
+        stations["operating_hours"]
+        .fillna("06:00-22:00")
+    )
+
+    return stations
+
+
+def enrich_stations(user_lat, user_lon, now=None):
+    """Add distance, travel time and AI prediction."""
+
     now = now or datetime.now()
-    out, ml_ok = [], True
-    for s in db.get_stations_with_status():
-        lat, lon = float(s["latitude"]), float(s["longitude"])
-        dist = haversine(user_lat, user_lon, lat, lon)
-        queue = s["queue_length"] if s["queue_length"] is not None else 0
-        traffic = s["traffic_level"] or "Medium"
-        prev_wait = s["waiting_time"] if s["waiting_time"] is not None else 10
-        prev_av = s["availability"] or "Medium"
-        item = {**s, "latitude": lat, "longitude": lon, "distance_km": round(dist, 2),
-                "travel_min": estimate_travel_minutes(dist), "traffic": traffic,
-                "queue": queue, "admin_availability": s["availability"],
-                "admin_wait": s["waiting_time"],
-                "nav_url": navigation_url(lat, lon, user_lat, user_lon)}
+
+    stations = load_station_data()
+
+    output = []
+
+    for _, station in stations.iterrows():
+
         try:
-            p = predict(s["station_id"], now.hour, now.weekday(), queue, traffic,
-                        max(2, queue * 3), prev_wait, prev_av)
-            item.update(pred_availability=p["availability"], pred_wait=p["waiting_time"],
-                        confidence=p["confidence"])
+            latitude = float(
+                station["latitude"]
+            )
+
+            longitude = float(
+                station["longitude"]
+            )
+
+        except (
+            KeyError,
+            TypeError,
+            ValueError
+        ):
+            continue
+
+        # Calculate distance
+        distance = haversine(
+            user_lat,
+            user_lon,
+            latitude,
+            longitude,
+        )
+
+        # Station values
+        queue = station.get(
+            "queue_length",
+            0
+        )
+
+        traffic = station.get(
+            "traffic_level",
+            "Medium"
+        )
+
+        waiting_time = station.get(
+            "waiting_time",
+            10
+        )
+
+        availability = station.get(
+            "availability",
+            "Medium"
+        )
+
+        status = station.get(
+            "status",
+            "open"
+        )
+
+        # Handle missing values
+        if pd.isna(queue):
+            queue = 0
+
+        if pd.isna(traffic):
+            traffic = "Medium"
+
+        if pd.isna(waiting_time):
+            waiting_time = 10
+
+        if pd.isna(availability):
+            availability = "Medium"
+
+        if pd.isna(status):
+            status = "open"
+
+        # Convert queue to integer
+        try:
+            queue = int(queue)
+        except (
+            TypeError,
+            ValueError
+        ):
+            queue = 0
+
+        # Convert waiting time to float
+        try:
+            waiting_time = float(
+                waiting_time
+            )
+        except (
+            TypeError,
+            ValueError
+        ):
+            waiting_time = 10
+
+        # Convert status to string
+        status = str(status).lower()
+
+        # Create station result
+        item = {
+            **station.to_dict(),
+
+            "latitude": latitude,
+            "longitude": longitude,
+
+            "distance_km": round(
+                distance,
+                2
+            ),
+
+            "travel_min": estimate_travel_minutes(
+                distance
+            ),
+
+            "queue": queue,
+
+            "traffic": traffic,
+
+            "admin_availability": availability,
+
+            "admin_wait": waiting_time,
+
+            "status": status,
+
+            "nav_url": navigation_url(
+                latitude,
+                longitude,
+                user_lat,
+                user_lon,
+            ),
+        }
+
+        # AI prediction
+        try:
+
+            prediction = predict(
+                station["station_id"],
+                now.hour,
+                now.weekday(),
+                queue,
+                traffic,
+                max(2, queue * 3),
+                waiting_time,
+                availability,
+            )
+
+            item.update(
+                pred_availability=prediction[
+                    "availability"
+                ],
+
+                pred_wait=prediction[
+                    "waiting_time"
+                ],
+
+                confidence=prediction[
+                    "confidence"
+                ],
+
+                ml_ok=True,
+            )
+
         except ModelMissingError:
-            ml_ok = False
-            item.update(pred_availability=prev_av, pred_wait=prev_wait, confidence=None)
-        out.append(item)
-    for item in out:
-        item["ml_ok"] = ml_ok
-    return sorted(out, key=lambda x: x["distance_km"])
+
+            item.update(
+                pred_availability=availability,
+
+                pred_wait=waiting_time,
+
+                confidence=None,
+
+                ml_ok=False,
+            )
+
+        output.append(item)
+
+    # Sort stations by nearest distance
+    output.sort(
+        key=lambda x: x["distance_km"]
+    )
+
+    return output
