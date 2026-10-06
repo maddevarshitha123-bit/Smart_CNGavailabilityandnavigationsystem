@@ -1,0 +1,66 @@
+{
+  "data_note": "Scores are on SYNTHETIC data, not real-world accuracy.",
+  "classification": {
+    "Decision Tree": {
+      "accuracy": 0.6493055555555556,
+      "precision": 0.6512883067967814,
+      "recall": 0.6493055555555556,
+      "f1": 0.6488618686346138
+    },
+    "Random Forest": {
+      "accuracy": 0.6927083333333334,
+      "precision": 0.6861060205286837,
+      "recall": 0.6927083333333334,
+      "f1": 0.6871794549492365
+    }
+  },
+  "regression": {
+    "Linear Regression": {
+      "mae": 2.683716741193912,
+      "rmse": 3.64995147959054,
+      "r2": 0.9232940558582377
+    },
+    "Random Forest": {
+      "mae": 2.8271507632692585,
+      "rmse": 3.8606098037924093,
+      "r2": 0.914184318489168
+    }
+  },
+  "best_classifier": "Random Forest",
+  "best_regressor": "Linear Regression",
+  "confusion_matrix": {
+    "labels": [
+      "Low",
+      "Medium",
+      "High"
+    ],
+    "matrix": [
+      [
+        78,
+        35,
+        6
+      ],
+      [
+        20,
+        81,
+        71
+      ],
+      [
+        5,
+        40,
+        240
+      ]
+    ]
+  },
+  "feature_importance": {
+    "station_id": 0.05744842502880323,
+    "hour": 0.0772229320675477,
+    "day_of_week": 0.05671018528114783,
+    "is_weekend": 0.010629898243283198,
+    "queue_length": 0.13829311261183516,
+    "traffic_level": 0.06326989200891389,
+    "vehicles_per_hour": 0.2984620458392363,
+    "previous_waiting_time": 0.14350715493729138,
+    "previous_availability": 0.1544563539819414
+  }
+}

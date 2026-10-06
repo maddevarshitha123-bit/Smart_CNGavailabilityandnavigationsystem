@@ -1,0 +1,8 @@
+.app-header { background: linear-gradient(90deg,#0b6e4f,#12a37f); color:#fff; padding:18px 24px; border-radius:12px; margin-bottom:16px; }
+.app-header h1 { color:#fff; margin:0; font-size:1.8rem; }
+.app-header p { margin:4px 0 0 0; opacity:.92; }
+.station-card { border:1px solid #d9e2dd; border-radius:12px; padding:14px 18px; margin-bottom:10px; background:rgba(18,163,127,.05); }
+.station-card h4 { margin:0 0 6px 0; }
+.pill { display:inline-block; padding:2px 10px; border-radius:20px; font-size:.8rem; font-weight:600; }
+.pill-open { background:#d8f3e4; color:#1d6b41; } .pill-closed,.pill-maintenance { background:#fbdcdc; color:#8a2b2b; }
+.note-ai { font-size:.85rem; opacity:.8; }
